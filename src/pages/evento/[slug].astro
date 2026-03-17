@@ -1,0 +1,74 @@
+---
+import "../../styles/global.css";
+import { events } from "../../data/events";
+
+export function getStaticPaths() {
+  return events.map((event) => ({
+    params: { slug: event.slug },
+    props: { event },
+  }));
+}
+
+const { event } = Astro.props;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{event.title} | Buri Jazz</title>
+    <meta name="description" content={event.description} />
+  </head>
+
+  <body class="bg-[#121a4a] text-[#efe0a2]">
+    <header class="border-b border-[#efe0a2]/10 bg-[#121a4a]">
+      <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+        <a
+          href="/"
+          class="text-lg font-black uppercase tracking-[0.35em] text-[#d4aa2a]"
+        >
+          Buri Jazz
+        </a>
+      </div>
+    </header>
+
+    <main class="px-6 py-16">
+      <div class="mx-auto grid max-w-7xl gap-10 md:grid-cols-[1.2fr_0.8fr]">
+        <section>
+          <p class="mb-4 text-xs uppercase tracking-[0.45em] text-[#efe0a2]/60">
+            Evento
+          </p>
+
+          <h1 class="text-4xl font-black uppercase tracking-[-0.03em] text-[#d4aa2a] md:text-6xl">
+            {event.title}
+          </h1>
+
+          <p class="mt-8 max-w-2xl text-base leading-8 text-[#efe0a2]/82">
+            {event.description}
+          </p>
+        </section>
+
+        <aside class="bg-[#b44a2b] p-8 shadow-[10px_10px_0_rgba(47,67,143,0.45)]">
+          <p class="text-xs uppercase tracking-[0.35em] text-[#efe0a2]/70">Fecha</p>
+          <p class="mt-2 text-2xl font-black text-[#efe0a2]">{event.date}</p>
+
+          <p class="mt-6 text-xs uppercase tracking-[0.35em] text-[#efe0a2]/70">Hora</p>
+          <p class="mt-2 text-2xl font-black text-[#efe0a2]">{event.time}</p>
+
+          <p class="mt-6 text-xs uppercase tracking-[0.35em] text-[#efe0a2]/70">Lugar</p>
+          <p class="mt-2 text-2xl font-black text-[#efe0a2]">{event.venue}</p>
+
+          <p class="mt-6 text-xs uppercase tracking-[0.35em] text-[#efe0a2]/70">Precio</p>
+          <p class="mt-2 text-3xl font-black text-[#d4aa2a]">Bs {event.price}</p>
+
+          <a
+            href={`/asientos/${event.slug}`}
+            class="mt-8 inline-flex bg-[#efe0a2] px-6 py-3 text-sm font-black uppercase tracking-[0.18em] text-[#121a4a] transition hover:translate-x-[2px] hover:translate-y-[2px]"
+          >
+            Elegir asientos
+          </a>
+        </aside>
+      </div>
+    </main>
+  </body>
+</html>

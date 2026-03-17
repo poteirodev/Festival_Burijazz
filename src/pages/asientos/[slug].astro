@@ -1,0 +1,58 @@
+---
+import "../../styles/global.css";
+import { events } from "../../data/events";
+import { layouts } from "../../data/layouts";
+import SeatMap from "../../components/SeatMap";
+
+export function getStaticPaths() {
+  return events.map((event) => ({
+    params: { slug: event.slug },
+    props: { event },
+  }));
+}
+
+const { event } = Astro.props;
+const layout = layouts[event.layoutId];
+---
+
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asientos | {event.title}</title>
+    <meta name="description" content={`Selección de asientos para ${event.title}`} />
+  </head>
+
+  <body class="bg-[#0f1535] text-[#f4eed7]">
+    <header class="border-b border-white/10 bg-[#0f1535]">
+      <div class="mx-auto flex max-w-[1600px] items-center justify-between px-5 py-4 md:px-8">
+        <a
+          href="/"
+          class="text-base font-black uppercase tracking-[0.35em] text-[#f0c85a] md:text-lg"
+        >
+          Buri Jazz
+        </a>
+      </div>
+    </header>
+
+    <main class="px-4 py-8 pb-32 md:px-8 md:py-10 xl:pb-10">
+      <div class="mx-auto max-w-[1600px]">
+        <p class="mb-3 text-[11px] uppercase tracking-[0.45em] text-white/55 md:text-xs">
+          Selección de asientos
+        </p>
+
+        <h1 class="text-3xl font-black uppercase tracking-[-0.03em] text-[#f0c85a] md:text-5xl">
+          {event.title}
+        </h1>
+
+        <p class="mt-3 text-sm text-white/75 md:text-base">
+          {event.date} · {event.time} · {event.venue}
+        </p>
+
+        <div class="mt-8">
+          <SeatMap client:load eventTitle={event.title} basePrice={event.price} layout={layout} />
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

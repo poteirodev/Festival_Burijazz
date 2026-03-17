@@ -1,0 +1,30 @@
+---
+const { event } = Astro.props;
+---
+
+<article class="border border-[#efe0a2]/10 bg-[#1a2767] p-6 shadow-[8px_8px_0_rgba(11,18,54,0.35)] transition hover:-translate-y-1">
+  <p class="text-xs uppercase tracking-[0.35em] text-[#efe0a2]/55">
+    {event.date}
+  </p>
+
+  <h3 class="mt-4 text-2xl font-black uppercase text-[#d4aa2a]">
+    {event.title}
+  </h3>
+
+  <div class="mt-4 space-y-2 text-sm uppercase tracking-[0.12em] text-[#efe0a2]/75">
+    <p>Hora: {event.time}</p>
+    <p>Lugar: {event.venue}</p>
+    <p>Desde: Bs {event.price}</p>
+  </div>
+
+  <p class="mt-5 leading-7 text-[#efe0a2]/80">
+    {event.description}
+  </p>
+
+  <a
+    href={`/asientos/${event.slug}`}
+    class="mt-8 inline-flex bg-[#d4aa2a] px-6 py-3 text-sm font-black uppercase tracking-[0.18em] text-[#121a4a] shadow-[6px_6px_0_rgba(47,67,143,0.45)] transition hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[4px_4px_0_rgba(47,67,143,0.45)]"
+  >
+    Comprar
+  </a>
+</article>

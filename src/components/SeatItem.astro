@@ -1,0 +1,18 @@
+---
+const { seat } = Astro.props;
+---
+
+<div
+  class="absolute"
+  style={`left:${seat.x}px; top:${seat.y}px;`}
+>
+  <button
+    class="group relative flex h-11 w-11 items-center justify-center"
+    title={seat.id}
+  >
+    <span class="absolute top-0 h-4 w-8 rounded-t-[10px] border border-[#dbe7ff]/25 bg-[#7b8fc9] transition group-hover:bg-[#ffd166]"></span>
+    <span class="absolute bottom-0 flex h-6 w-11 items-center justify-center rounded-b-[12px] border border-[#dbe7ff]/25 bg-[#4f6db8] text-[10px] font-black text-white transition group-hover:bg-[#ffd166] group-hover:text-[#1b2559]">
+      {seat.id}
+    </span>
+  </button>
+</div>

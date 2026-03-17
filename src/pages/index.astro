@@ -1,17 +1,76 @@
 ---
-
+import "../styles/global.css";
+import { events } from "../data/events";
+import EventCard from "../components/EventCard.astro";
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buri Jazz</title>
+    <meta
+      name="description"
+      content="Festival Internacional Santa Cruz"
+    />
+  </head>
+
+  <body class="bg-[#121a4a] text-[#efe0a2]">
+    <header class="border-b border-[#efe0a2]/10 bg-[#121a4a]">
+      <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
+        <a
+          href="/"
+          class="text-lg font-black uppercase tracking-[0.35em] text-[#d4aa2a]"
+        >
+          Buri Jazz
+        </a>
+
+        <nav class="hidden gap-8 text-xs uppercase tracking-[0.28em] text-[#efe0a2]/75 md:flex">
+          <a href="#eventos" class="transition hover:text-[#d4aa2a]">Eventos</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="relative overflow-hidden px-6 py-20">
+        <div class="absolute inset-0 pointer-events-none">
+          <div class="absolute left-[8%] top-0 h-full w-16 bg-[#2f438f]/20"></div>
+          <div class="absolute right-[14%] top-0 h-full w-20 bg-[#2f438f]/15"></div>
+          <div class="absolute right-[12%] top-[14%] h-24 w-24 rounded-full bg-[#efe0a2] opacity-80"></div>
+        </div>
+
+        <div class="relative mx-auto max-w-7xl">
+          <p class="mb-4 text-xs uppercase tracking-[0.55em] text-[#efe0a2]/65">
+            Festival Internacional
+          </p>
+
+          <h1 class="max-w-4xl text-[4rem] font-black uppercase leading-[0.88] tracking-[-0.04em] text-[#d4aa2a] drop-shadow-[5px_5px_0_#2f438f] sm:text-[5rem] md:text-[6.5rem]">
+            Buri
+            <span class="block">Jazz</span>
+          </h1>
+
+          <p class="mt-8 max-w-2xl text-base leading-8 text-[#efe0a2]/82 md:text-lg">
+            Explora los eventos del festival y selecciona tu entrada para vivir una experiencia única.
+          </p>
+        </div>
+      </section>
+
+      <section id="eventos" class="bg-[#18235d] px-6 py-20">
+        <div class="mx-auto max-w-7xl">
+          <div class="mb-12">
+            <p class="mb-3 text-xs uppercase tracking-[0.45em] text-[#efe0a2]/60">
+              Cartelera
+            </p>
+            <h2 class="text-4xl font-black uppercase tracking-[-0.03em] text-[#d4aa2a] md:text-5xl">
+              Eventos disponibles
+            </h2>
+          </div>
+
+          <div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {events.map((event) => <EventCard event={event} />)}
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
 </html>
