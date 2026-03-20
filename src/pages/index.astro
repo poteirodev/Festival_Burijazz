@@ -1,7 +1,27 @@
 ---
 import "../styles/global.css";
-import { events } from "../data/events";
 import EventCard from "../components/EventCard.astro";
+
+type EventItem = {
+  id: number;
+  slug: string;
+  nombre: string;
+  fecha: string;
+  hora: string;
+  lugar: string;
+  descripcion: string;
+};
+
+const apiUrl = "http://localhost/festivalburijazz-astro/api/eventos.php";
+
+let events: EventItem[] = [];
+
+try {
+  const response = await fetch(apiUrl);
+  events = await response.json();
+} catch (error) {
+  console.error("Error cargando eventos:", error);
+}
 ---
 
 <html lang="es">
@@ -67,7 +87,11 @@ import EventCard from "../components/EventCard.astro";
           </div>
 
           <div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {events.map((event) => <EventCard event={event} />)}
+            {events.length > 0 ? (
+              events.map((event: EventItem) => <EventCard event={event} />)
+            ) : (
+              <p>No hay eventos disponibles.</p>
+            )}
           </div>
         </div>
       </section>
