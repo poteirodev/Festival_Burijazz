@@ -1,4 +1,12 @@
 <?php
+session_start();
+
+if (!isset($_SESSION['admin_id'])) {
+    header('Location: /Festivalburijazz-astro/admin/login.php');
+    exit;
+}
+?>
+<?php
 require_once "../config/db.php";
 
 $sql = "SELECT e.*, p.nombre AS plantilla_nombre

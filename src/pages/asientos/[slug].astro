@@ -1,6 +1,8 @@
 ---
 import "../../styles/global.css";
 
+export const prerender = false;
+
 type EventoDetalle = {
   id: number;
   slug: string;
@@ -11,480 +13,487 @@ type EventoDetalle = {
   descripcion: string;
 };
 
-type AsientoEvento = {
+type AsientoEstado = "disponible" | "reservado" | "ocupado" | "bloqueado";
+
+type Asiento = {
   id: number;
+  codigo: string;
   fila: string;
   numero: number;
-  codigo: string;
-  estado: "disponible" | "reservado" | "ocupado" | "bloqueado";
-  reservado_hasta?: string | null;
+  estado: AsientoEstado;
+  precio: number | string;
 };
-
-type EventoApiResponse = {
-  evento: EventoDetalle | null;
-  asientos: AsientoEvento[];
-};
-
-const leftOrder = [15, 13, 11, 9, 7, 5, 3, 1];
-const rightOrder = [2, 4, 6, 8, 10, 12, 14, 16];
-
-const upperRows = ["P", "O", "N", "M", "L"];
-const lowerRows = ["K", "J", "I", "H", "G", "F", "E", "D", "C", "B", "A"];
-
-export async function getStaticPaths() {
-  const response = await fetch("http://localhost/festivalburijazz-astro/api/eventos.php");
-  const events = await response.json();
-
-  return events
-    .filter((event: { slug?: string | null }) => event.slug)
-    .map((event: { slug: string }) => ({
-      params: { slug: event.slug },
-    }));
-}
 
 const { slug } = Astro.params;
 
-const response = await fetch(`http://localhost/festivalburijazz-astro/api/evento_asientos.php?slug=${slug}`);
-const data: EventoApiResponse = await response.json();
-
-const event = data.evento;
-const seats = data.asientos;
-
-if (!event) {
-  throw new Error("Evento no encontrado");
+if (!slug) {
+  return new Response("Slug no válido", { status: 400 });
 }
 
-const seatMap = new Map<string, AsientoEvento>();
-for (const seat of seats) {
-  seatMap.set(seat.codigo, seat);
+const eventoResponse = await fetch(
+  `http://localhost/festivalburijazz-astro/api/eventos.php?slug=${encodeURIComponent(slug)}`,
+  { cache: "no-store" }
+);
+
+if (!eventoResponse.ok) {
+  return new Response("No se pudo cargar el evento", { status: 500 });
 }
 
-function getSeat(code: string) {
-  return seatMap.get(code);
+const eventoData = await eventoResponse.json();
+const evento: EventoDetalle | null = Array.isArray(eventoData)
+  ? eventoData[0] ?? null
+  : eventoData ?? null;
+
+if (!evento) {
+  return new Response("Evento no encontrado", { status: 404 });
 }
+
+const asientosResponse = await fetch(
+  `http://localhost/festivalburijazz-astro/api/evento_asientos.php?slug=${encodeURIComponent(slug)}`,
+  { cache: "no-store" }
+);
+
+if (!asientosResponse.ok) {
+  return new Response("No se pudieron cargar los asientos", { status: 500 });
+}
+
+const asientosData = await asientosResponse.json();
+const asientos: Asiento[] = Array.isArray(asientosData) ? asientosData : [];
+
+const filas = [...new Set(asientos.map((seat) => seat.fila))].sort((a, b) => a.localeCompare(b));
+
+const asientosPorFila = filas.map((fila) => ({
+  fila,
+  asientos: asientos
+    .filter((seat) => seat.fila === fila)
+    .sort((a, b) => a.numero - b.numero),
+}));
+
+const maxSelectable = 6;
 ---
 
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Asientos | {event.nombre}</title>
-    <meta name="description" content={`Selección de asientos para ${event.nombre}`} />
+    <title>{evento.nombre} | Selección de asientos</title>
+    <style>
+      .seat-btn {
+        min-width: 62px;
+        border-radius: 8px;
+        border: 1px solid;
+        padding: 12px;
+        text-align: center;
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        transition: all 0.15s ease;
+      }
+
+      .seat-available {
+        border-color: #2f8f68;
+        background: #0f6b57;
+        color: #d8fff3;
+        cursor: pointer;
+      }
+
+      .seat-available:hover {
+        background: #13876d;
+      }
+
+      .seat-selected {
+        outline: 3px solid #d4aa2a;
+        outline-offset: 2px;
+        box-shadow: 0 0 0 3px rgba(212, 170, 42, 0.22);
+        transform: scale(1.03);
+      }
+
+      .seat-reserved {
+        border-color: #d4aa2a;
+        background: #8b6b09;
+        color: #f9e7a6;
+        cursor: not-allowed;
+        opacity: 0.95;
+      }
+
+      .seat-occupied {
+        border-color: #8d4b55;
+        background: #6f2d38;
+        color: #ffd7dc;
+        cursor: not-allowed;
+        opacity: 0.95;
+      }
+
+      .seat-blocked {
+        border-color: #5f668b;
+        background: #40486c;
+        color: #eceffd;
+        cursor: not-allowed;
+        opacity: 0.95;
+      }
+    </style>
   </head>
 
-  <body class="bg-[#0f1535] text-[#f4eed7]">
-    <header class="border-b border-white/10 bg-[#0f1535]">
-      <div class="mx-auto flex max-w-[1600px] items-center justify-between px-5 py-4 md:px-8">
-        <a
-          href="/"
-          class="text-base font-black uppercase tracking-[0.35em] text-[#f0c85a] md:text-lg"
-        >
-          Buri Jazz
-        </a>
-      </div>
-    </header>
+  <body class="min-h-screen bg-[#07124a] text-[#efe0a2]">
+    <main class="mx-auto flex min-h-screen w-full max-w-[1180px] flex-col px-6 py-10">
+      <a
+        href="/"
+        class="mb-8 text-sm font-black uppercase tracking-[0.35em] text-[#d4aa2a] transition hover:text-[#efe0a2]"
+      >
+        Buri Jazz
+      </a>
 
-    <main class="px-4 py-8 pb-24 md:px-8 md:py-10">
-      <div class="mx-auto max-w-[1600px]">
-        <p class="mb-3 text-[11px] uppercase tracking-[0.45em] text-white/55 md:text-xs">
+      <section class="mb-8">
+        <p class="mb-2 text-[11px] font-semibold uppercase tracking-[0.4em] text-[#efe0a2]/65">
           Selección de asientos
         </p>
 
-        <h1 class="text-3xl font-black uppercase tracking-[-0.03em] text-[#f0c85a] md:text-5xl">
-          {event.nombre}
+        <h1 class="text-5xl font-black uppercase tracking-[-0.03em] text-[#d4aa2a]">
+          {evento.nombre}
         </h1>
 
-        <p class="mt-3 text-sm text-white/75 md:text-base">
-          {event.fecha} · {event.hora} · {event.lugar}
+        <p class="mt-2 text-sm text-[#efe0a2]/80">
+          {evento.fecha} · {evento.hora} · {evento.lugar}
+        </p>
+      </section>
+
+      <section class="rounded-xl border border-[#d4aa2a]/35 bg-[#101d5c] px-5 py-5 shadow-[0_0_0_1px_rgba(212,170,42,0.05)]">
+        <div class="mx-auto mb-6 flex w-full max-w-[640px] items-center justify-center rounded-md bg-[#9d7b08] px-6 py-3 text-center text-xs font-black uppercase tracking-[0.35em] text-[#efe0a2]">
+          Escenario
+        </div>
+
+        {asientosPorFila.length > 0 ? (
+          <div class="space-y-4">
+            {asientosPorFila.map(({ fila, asientos }) => (
+              <div class="flex flex-wrap items-center gap-3">
+                <div class="w-8 text-center text-xs font-black uppercase text-[#efe0a2]/70">
+                  {fila}
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                  {asientos.map((seat) => (
+                    <button
+                      type="button"
+                      class:list={[
+                        "seat-btn",
+                        seat.estado === "disponible" && "seat-available",
+                        seat.estado === "reservado" && "seat-reserved",
+                        seat.estado === "ocupado" && "seat-occupied",
+                        seat.estado === "bloqueado" && "seat-blocked",
+                      ]}
+                      data-seat-id={seat.id}
+                      data-seat-code={seat.codigo}
+                      data-seat-status={seat.estado}
+                      data-seat-price={seat.precio}
+                      disabled={seat.estado !== "disponible"}
+                    >
+                      {seat.codigo}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p class="text-sm text-[#efe0a2]/75">No hay asientos cargados para este evento.</p>
+        )}
+
+        <div class="mt-8 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[0.16em]">
+          <span class="rounded-md border border-[#2f8f68] bg-[#0f6b57] px-3 py-2 text-[#d8fff3]">Disponible</span>
+          <span class="rounded-md border border-[#d4aa2a] bg-[#8b6b09] px-3 py-2 text-[#f9e7a6]">Reservado</span>
+          <span class="rounded-md border border-[#8d4b55] bg-[#6f2d38] px-3 py-2 text-[#ffd7dc]">Ocupado</span>
+          <span class="rounded-md border border-[#5f668b] bg-[#40486c] px-3 py-2 text-[#eceffd]">Bloqueado</span>
+        </div>
+      </section>
+
+      <section class="mt-6 rounded-xl border border-[#d4aa2a]/20 bg-[#101d5c] px-5 py-5">
+        <h2 class="text-2xl font-black uppercase text-[#d4aa2a]">Compra de asientos</h2>
+
+        <p class="mt-3 text-sm text-[#efe0a2]/80">
+          Máximo {maxSelectable} asientos por compra o reserva.
         </p>
 
-        <div class="mt-6 rounded-xl border border-white/10 bg-[#16204d] p-4 md:p-6">
-          <div class="mx-auto mb-8 flex max-w-4xl justify-center">
-            <div class="w-full rounded-md bg-[#f0c85a] py-3 text-center text-sm font-black uppercase tracking-[0.3em] text-[#0f1535]">
-              Escenario
-            </div>
-          </div>
-
-          <div class="overflow-x-auto">
-            <div class="mx-auto min-w-[1260px] max-w-[1260px] space-y-3">
-              {upperRows.map((row) => (
-                <div class="grid grid-cols-[repeat(8,72px)_56px_repeat(8,72px)] justify-center gap-2">
-                  {leftOrder.map((num) => {
-                    const seat = getSeat(`${num}${row}`);
-                    return seat ? (
-                      <button
-                        type="button"
-                        class:list={[
-                          "seat-btn h-[42px] rounded-md border px-2 text-xs font-black uppercase tracking-[0.08em] transition",
-                          seat.estado === "disponible" && "border-green-300/40 bg-green-400/20 text-green-100 hover:bg-green-400/30",
-                          seat.estado === "reservado" && "border-yellow-300/40 bg-yellow-300/20 text-yellow-100",
-                          seat.estado === "ocupado" && "border-red-300/40 bg-red-400/20 text-red-100 cursor-not-allowed",
-                          seat.estado === "bloqueado" && "border-white/10 bg-white/10 text-white/40 cursor-not-allowed",
-                        ]}
-                        data-seat-id={seat.id}
-                        data-seat-code={seat.codigo}
-                        data-seat-status={seat.estado}
-                        disabled={seat.estado === "ocupado" || seat.estado === "bloqueado"}
-                      >
-                        {seat.codigo}
-                      </button>
-                    ) : <div class="h-[42px]"></div>;
-                  })}
-
-                  <div class="h-[42px]"></div>
-
-                  {rightOrder.map((num) => {
-                    const seat = getSeat(`${num}${row}`);
-                    return seat ? (
-                      <button
-                        type="button"
-                        class:list={[
-                          "seat-btn h-[42px] rounded-md border px-2 text-xs font-black uppercase tracking-[0.08em] transition",
-                          seat.estado === "disponible" && "border-green-300/40 bg-green-400/20 text-green-100 hover:bg-green-400/30",
-                          seat.estado === "reservado" && "border-yellow-300/40 bg-yellow-300/20 text-yellow-100",
-                          seat.estado === "ocupado" && "border-red-300/40 bg-red-400/20 text-red-100 cursor-not-allowed",
-                          seat.estado === "bloqueado" && "border-white/10 bg-white/10 text-white/40 cursor-not-allowed",
-                        ]}
-                        data-seat-id={seat.id}
-                        data-seat-code={seat.codigo}
-                        data-seat-status={seat.estado}
-                        disabled={seat.estado === "ocupado" || seat.estado === "bloqueado"}
-                      >
-                        {seat.codigo}
-                      </button>
-                    ) : <div class="h-[42px]"></div>;
-                  })}
-                </div>
-              ))}
-
-              <div class="h-10"></div>
-
-              {lowerRows.map((row) => (
-                <div class="grid grid-cols-[repeat(8,72px)_56px_repeat(8,72px)] justify-center gap-2">
-                  {leftOrder.map((num) => {
-                    const seat = getSeat(`${num}${row}`);
-                    return seat ? (
-                      <button
-                        type="button"
-                        class:list={[
-                          "seat-btn h-[42px] rounded-md border px-2 text-xs font-black uppercase tracking-[0.08em] transition",
-                          seat.estado === "disponible" && "border-green-300/40 bg-green-400/20 text-green-100 hover:bg-green-400/30",
-                          seat.estado === "reservado" && "border-yellow-300/40 bg-yellow-300/20 text-yellow-100",
-                          seat.estado === "ocupado" && "border-red-300/40 bg-red-400/20 text-red-100 cursor-not-allowed",
-                          seat.estado === "bloqueado" && "border-white/10 bg-white/10 text-white/40 cursor-not-allowed",
-                        ]}
-                        data-seat-id={seat.id}
-                        data-seat-code={seat.codigo}
-                        data-seat-status={seat.estado}
-                        disabled={seat.estado === "ocupado" || seat.estado === "bloqueado"}
-                      >
-                        {seat.codigo}
-                      </button>
-                    ) : <div class="h-[42px]"></div>;
-                  })}
-
-                  <div class="h-[42px]"></div>
-
-                  {rightOrder.map((num) => {
-                    const seat = getSeat(`${num}${row}`);
-                    return seat ? (
-                      <button
-                        type="button"
-                        class:list={[
-                          "seat-btn h-[42px] rounded-md border px-2 text-xs font-black uppercase tracking-[0.08em] transition",
-                          seat.estado === "disponible" && "border-green-300/40 bg-green-400/20 text-green-100 hover:bg-green-400/30",
-                          seat.estado === "reservado" && "border-yellow-300/40 bg-yellow-300/20 text-yellow-100",
-                          seat.estado === "ocupado" && "border-red-300/40 bg-red-400/20 text-red-100 cursor-not-allowed",
-                          seat.estado === "bloqueado" && "border-white/10 bg-white/10 text-white/40 cursor-not-allowed",
-                        ]}
-                        data-seat-id={seat.id}
-                        data-seat-code={seat.codigo}
-                        data-seat-status={seat.estado}
-                        disabled={seat.estado === "ocupado" || seat.estado === "bloqueado"}
-                      >
-                        {seat.codigo}
-                      </button>
-                    ) : <div class="h-[42px]"></div>;
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div class="mt-8 flex flex-wrap gap-3 text-xs uppercase tracking-[0.15em]">
-            <div class="rounded-md border border-green-300/40 bg-green-400/20 px-3 py-2 text-green-100">Disponible</div>
-            <div class="rounded-md border border-yellow-300/40 bg-yellow-300/20 px-3 py-2 text-yellow-100">Reservado 10 min</div>
-            <div class="rounded-md border border-red-300/40 bg-red-400/20 px-3 py-2 text-red-100">Ocupado</div>
-            <div class="rounded-md border border-white/10 bg-white/10 px-3 py-2 text-white/40">Bloqueado</div>
-          </div>
-        </div>
-
-        <div class="mt-8 rounded-xl border border-white/10 bg-[#16204d] p-4 md:p-6">
-          <h2 class="text-xl font-black uppercase text-[#f0c85a]">Compra de asientos</h2>
-
-          <p class="mt-3 text-sm text-white/70">
-            Puedes seleccionar hasta <span class="font-black text-white">6 asientos</span>.
-          </p>
-
-          <p class="mt-3 text-sm text-white/70">
+        <div class="mt-4 space-y-1 text-sm text-[#efe0a2]/75">
+          <p>
             Asientos seleccionados:
-            <span id="selected-seat-label" class="font-black text-white"> Ninguno</span>
+            <span id="selected-seats-text" class="font-bold text-[#efe0a2]">Ninguno</span>
           </p>
-
-          <p class="mt-2 text-sm text-white/70">
+          <p>
             Tiempo de reserva:
-            <span id="countdown" class="font-black text-yellow-200"> No iniciado</span>
+            <span id="reservation-time-text" class="font-bold text-[#d4aa2a]">No iniciado</span>
           </p>
-
-          <form id="buy-form" class="mt-6 grid gap-4 md:grid-cols-3">
-            <input type="hidden" id="evento_slug" name="evento_slug" value={event.slug} />
-
-            <div>
-              <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-white/60">Nombre</label>
-              <input
-                id="nombre"
-                name="nombre"
-                type="text"
-                required
-                class="w-full rounded-md border border-white/10 bg-[#0f1535] px-4 py-3 text-white outline-none"
-              />
-            </div>
-
-            <div>
-              <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-white/60">Email</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                class="w-full rounded-md border border-white/10 bg-[#0f1535] px-4 py-3 text-white outline-none"
-              />
-            </div>
-
-            <div>
-              <label class="mb-2 block text-xs uppercase tracking-[0.2em] text-white/60">Celular</label>
-              <input
-                id="celular"
-                name="celular"
-                type="text"
-                required
-                class="w-full rounded-md border border-white/10 bg-[#0f1535] px-4 py-3 text-white outline-none"
-              />
-            </div>
-
-            <div class="md:col-span-3 flex flex-wrap gap-3">
-              <button
-                id="reserve-button"
-                type="button"
-                class="inline-flex bg-yellow-300 px-6 py-3 text-sm font-black uppercase tracking-[0.18em] text-[#121a4a] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled
-              >
-                Reservar 10 minutos
-              </button>
-
-              <button
-                id="buy-button"
-                type="submit"
-                class="inline-flex bg-[#f0c85a] px-6 py-3 text-sm font-black uppercase tracking-[0.18em] text-[#121a4a] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled
-              >
-                Comprar asientos
-              </button>
-            </div>
-          </form>
-
-          <p id="buy-message" class="mt-4 text-sm font-semibold"></p>
         </div>
-      </div>
+
+        <div class="mt-5">
+          <button
+            id="reserve-btn"
+            type="button"
+            class="rounded-md bg-[#8b6b09] px-5 py-3 text-xs font-black uppercase tracking-[0.2em] text-[#efe0a2] transition hover:brightness-110"
+          >
+            Reservar 10 minutos
+          </button>
+        </div>
+
+        <form id="purchase-form" class="mt-6" novalidate>
+          <div class="grid gap-4 md:grid-cols-3">
+            <div>
+              <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.35em] text-[#efe0a2]/75">
+                Nombre
+              </label>
+              <input
+                id="buyer-name"
+                type="text"
+                class="w-full rounded-md border border-[#d4aa2a]/35 bg-[#091447] px-4 py-3 text-sm text-[#efe0a2] outline-none placeholder:text-[#efe0a2]/35 focus:border-[#d4aa2a]"
+              />
+            </div>
+
+            <div>
+              <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.35em] text-[#efe0a2]/75">
+                Email
+              </label>
+              <input
+                id="buyer-email"
+                type="email"
+                class="w-full rounded-md border border-[#d4aa2a]/35 bg-[#091447] px-4 py-3 text-sm text-[#efe0a2] outline-none placeholder:text-[#efe0a2]/35 focus:border-[#d4aa2a]"
+              />
+            </div>
+
+            <div>
+              <label class="mb-2 block text-[11px] font-bold uppercase tracking-[0.35em] text-[#efe0a2]/75">
+                Celular
+              </label>
+              <input
+                id="buyer-phone"
+                type="text"
+                class="w-full rounded-md border border-[#d4aa2a]/35 bg-[#091447] px-4 py-3 text-sm text-[#efe0a2] outline-none placeholder:text-[#efe0a2]/35 focus:border-[#d4aa2a]"
+              />
+            </div>
+          </div>
+
+          <div class="mt-5 flex flex-wrap gap-3">
+            <button
+              id="buy-btn"
+              type="submit"
+              class="rounded-md bg-[#9d7b08] px-5 py-3 text-xs font-black uppercase tracking-[0.2em] text-[#efe0a2] transition hover:brightness-110"
+            >
+              Comprar asientos
+            </button>
+          </div>
+
+          <p id="feedback-message" class="mt-4 text-sm"></p>
+        </form>
+      </section>
     </main>
 
-    <script is:inline>
-      const MAX_SEATS = 6;
-      const seatButtons = document.querySelectorAll('.seat-btn');
-      const selectedSeatLabel = document.getElementById('selected-seat-label');
-      const reserveButton = document.getElementById('reserve-button');
-      const buyForm = document.getElementById('buy-form');
-      const buyButton = document.getElementById('buy-button');
-      const buyMessage = document.getElementById('buy-message');
-      const countdown = document.getElementById('countdown');
+    <script define:vars={{ slug, maxSelectable }} is:inline>
+      const selectedSeats = [];
+      let reservationExpiresAt = null;
+      let reservationTimer = null;
 
-      let selectedSeats = [];
-      let reservedSeats = [];
-      let timerInterval = null;
-      let reserveEndTime = null;
+      const seatButtons = document.querySelectorAll(".seat-btn");
+      const selectedSeatsText = document.getElementById("selected-seats-text");
+      const reservationTimeText = document.getElementById("reservation-time-text");
+      const reserveBtn = document.getElementById("reserve-btn");
+      const feedbackMessage = document.getElementById("feedback-message");
+      const purchaseForm = document.getElementById("purchase-form");
+      const buyerName = document.getElementById("buyer-name");
+      const buyerEmail = document.getElementById("buyer-email");
+      const buyerPhone = document.getElementById("buyer-phone");
 
-      function updateSelectedLabel() {
-        if (selectedSeats.length === 0) {
-          selectedSeatLabel.textContent = ' Ninguno';
-        } else {
-          selectedSeatLabel.textContent = ' ' + selectedSeats.map(s => s.code).join(', ');
-        }
+      function renderSelectedSeats() {
+        selectedSeatsText.textContent =
+          selectedSeats.length > 0
+            ? selectedSeats.map((seat) => seat.code).join(", ")
+            : "Ninguno";
       }
 
-      function updateButtonsState() {
-        reserveButton.disabled = selectedSeats.length === 0 || selectedSeats.length > MAX_SEATS || reservedSeats.length > 0;
-        buyButton.disabled = reservedSeats.length === 0;
+      function paintSelected(button) {
+        if (button.dataset.seatStatus !== "disponible") return;
+        button.classList.add("seat-selected");
       }
 
-      function startCountdown(minutes) {
-        reserveEndTime = Date.now() + minutes * 60 * 1000;
+      function unpaintSelected(button) {
+        button.classList.remove("seat-selected");
+      }
 
-        if (timerInterval) clearInterval(timerInterval);
+      function resetSelectedSeats() {
+        selectedSeats.length = 0;
+        document.querySelectorAll(".seat-btn").forEach((btn) => unpaintSelected(btn));
+        renderSelectedSeats();
+      }
 
-        timerInterval = setInterval(() => {
-          const diff = reserveEndTime - Date.now();
+      function startReservationCountdown(minutes = 10) {
+        const expiresAt = Date.now() + minutes * 60 * 1000;
+        reservationExpiresAt = expiresAt;
+
+        if (reservationTimer) clearInterval(reservationTimer);
+
+        reservationTimer = setInterval(() => {
+          const diff = reservationExpiresAt - Date.now();
 
           if (diff <= 0) {
-            clearInterval(timerInterval);
-            countdown.textContent = ' Expirada';
-            location.reload();
+            clearInterval(reservationTimer);
+            reservationTimer = null;
+            reservationTimeText.textContent = "Expirada";
             return;
           }
 
-          const mins = Math.floor(diff / 60000);
-          const secs = Math.floor((diff % 60000) / 1000);
-          countdown.textContent = ` ${mins}:${String(secs).padStart(2, '0')}`;
+          const totalSeconds = Math.floor(diff / 1000);
+          const mins = Math.floor(totalSeconds / 60);
+          const secs = totalSeconds % 60;
+          reservationTimeText.textContent = `${mins}:${String(secs).padStart(2, "0")}`;
         }, 1000);
       }
 
       seatButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-          if (button.disabled || reservedSeats.length > 0) return;
-
-          const seatId = button.dataset.seatId;
+        button.addEventListener("click", () => {
+          const seatId = Number(button.dataset.seatId);
           const seatCode = button.dataset.seatCode;
+          const seatPrice = Number(button.dataset.seatPrice ?? 0);
 
-          const existingIndex = selectedSeats.findIndex(s => s.id === seatId);
+          const existingIndex = selectedSeats.findIndex((seat) => seat.id === seatId);
 
           if (existingIndex >= 0) {
             selectedSeats.splice(existingIndex, 1);
-            button.classList.remove('ring-2', 'ring-[#f0c85a]');
-          } else {
-            if (selectedSeats.length >= MAX_SEATS) {
-              buyMessage.textContent = 'Solo puedes seleccionar hasta 6 asientos.';
-              buyMessage.className = 'mt-4 text-sm font-semibold text-red-300';
-              return;
-            }
-
-            selectedSeats.push({ id: seatId, code: seatCode });
-            button.classList.add('ring-2', 'ring-[#f0c85a]');
+            unpaintSelected(button);
+            renderSelectedSeats();
+            feedbackMessage.textContent = "";
+            return;
           }
 
-          buyMessage.textContent = '';
-          updateSelectedLabel();
-          updateButtonsState();
+          if (selectedSeats.length >= maxSelectable) {
+            feedbackMessage.textContent = `Solo puedes seleccionar hasta ${maxSelectable} asientos.`;
+            feedbackMessage.className = "mt-4 text-sm text-[#ffd7dc]";
+            return;
+          }
+
+          selectedSeats.push({
+            id: seatId,
+            code: seatCode,
+            price: seatPrice,
+          });
+
+          paintSelected(button);
+          renderSelectedSeats();
+          feedbackMessage.textContent = "";
         });
       });
 
-      reserveButton.addEventListener('click', async () => {
-        if (selectedSeats.length === 0) return;
-
-        reserveButton.disabled = true;
-        buyMessage.textContent = 'Reservando asientos...';
-        buyMessage.className = 'mt-4 text-sm font-semibold text-yellow-200';
-
-        try {
-          const response = await fetch('http://localhost/festivalburijazz-astro/api/reservar_asientos.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              evento_slug: document.getElementById('evento_slug').value,
-              seat_ids: selectedSeats.map(s => Number(s.id))
-            })
-          });
-
-          const data = await response.json();
-
-          if (data.success) {
-            reservedSeats = [...selectedSeats];
-
-            reservedSeats.forEach((seat) => {
-              const btn = document.querySelector(`[data-seat-id="${seat.id}"]`);
-              if (btn) {
-                btn.className = 'seat-btn h-[42px] rounded-md border px-2 text-xs font-black uppercase tracking-[0.08em] transition border-yellow-300/40 bg-yellow-300/20 text-yellow-100';
-                btn.disabled = false;
-              }
-            });
-
-            buyMessage.textContent = 'Asientos reservados por 10 minutos.';
-            buyMessage.className = 'mt-4 text-sm font-semibold text-green-300';
-            startCountdown(10);
-            updateButtonsState();
-          } else {
-            buyMessage.textContent = data.message || 'No se pudo reservar.';
-            buyMessage.className = 'mt-4 text-sm font-semibold text-red-300';
-            reserveButton.disabled = false;
-          }
-        } catch (error) {
-          buyMessage.textContent = 'Error al reservar.';
-          buyMessage.className = 'mt-4 text-sm font-semibold text-red-300';
-          reserveButton.disabled = false;
-        }
-      });
-
-      buyForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        if (reservedSeats.length === 0) {
-          buyMessage.textContent = 'Primero debes reservar los asientos.';
-          buyMessage.className = 'mt-4 text-sm font-semibold text-red-300';
+      reserveBtn?.addEventListener("click", async () => {
+        if (selectedSeats.length === 0) {
+          feedbackMessage.textContent = "Selecciona al menos un asiento para reservar.";
+          feedbackMessage.className = "mt-4 text-sm text-[#ffd7dc]";
           return;
         }
 
-        buyButton.disabled = true;
-        buyMessage.textContent = 'Procesando compra...';
-        buyMessage.className = 'mt-4 text-sm font-semibold text-yellow-200';
-
         try {
-          const response = await fetch('http://localhost/festivalburijazz-astro/api/comprar_asiento.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+          const response = await fetch("http://localhost/festivalburijazz-astro/api/reservar_asientos.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
             body: JSON.stringify({
-              evento_slug: document.getElementById('evento_slug').value,
-              seat_ids: reservedSeats.map(s => Number(s.id)),
-              nombre: document.getElementById('nombre').value,
-              email: document.getElementById('email').value,
-              celular: document.getElementById('celular').value
-            })
+              slug,
+              asientos: selectedSeats.map((seat) => seat.id),
+            }),
           });
 
           const data = await response.json();
 
-          if (data.success) {
-            if (timerInterval) clearInterval(timerInterval);
-            countdown.textContent = ' Finalizada';
-
-            reservedSeats.forEach((seat) => {
-              const btn = document.querySelector(`[data-seat-id="${seat.id}"]`);
-              if (btn) {
-                btn.className = 'seat-btn h-[42px] rounded-md border px-2 text-xs font-black uppercase tracking-[0.08em] transition border-red-300/40 bg-red-400/20 text-red-100 cursor-not-allowed';
-                btn.disabled = true;
-                btn.classList.remove('ring-2', 'ring-[#f0c85a]');
-              }
-            });
-
-            selectedSeats = [];
-            reservedSeats = [];
-            updateSelectedLabel();
-
-            buyMessage.textContent = 'Compra realizada correctamente.';
-            buyMessage.className = 'mt-4 text-sm font-semibold text-green-300';
-            buyForm.reset();
-            updateButtonsState();
-          } else {
-            buyMessage.textContent = data.message || 'No se pudo completar la compra.';
-            buyMessage.className = 'mt-4 text-sm font-semibold text-red-300';
-            buyButton.disabled = false;
+          if (!response.ok || !data.ok) {
+            throw new Error(data.message || "No se pudieron reservar los asientos.");
           }
+
+          feedbackMessage.textContent = "Asientos reservados correctamente por 10 minutos.";
+          feedbackMessage.className = "mt-4 text-sm text-[#d8fff3]";
+
+          startReservationCountdown(10);
+
+          selectedSeats.forEach((seat) => {
+            const btn = document.querySelector(`[data-seat-id="${seat.id}"]`);
+            if (btn) {
+              btn.dataset.seatStatus = "reservado";
+              btn.disabled = true;
+              btn.classList.remove("seat-available", "seat-selected");
+              btn.classList.add("seat-reserved");
+            }
+          });
+
+          resetSelectedSeats();
         } catch (error) {
-          buyMessage.textContent = 'Error al procesar la compra.';
-          buyMessage.className = 'mt-4 text-sm font-semibold text-red-300';
-          buyButton.disabled = false;
+          feedbackMessage.textContent = error instanceof Error ? error.message : "Error al reservar.";
+          feedbackMessage.className = "mt-4 text-sm text-[#ffd7dc]";
         }
       });
 
-      updateSelectedLabel();
-      updateButtonsState();
+      purchaseForm?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        if (selectedSeats.length === 0) {
+          feedbackMessage.textContent = "Selecciona al menos un asiento para comprar.";
+          feedbackMessage.className = "mt-4 text-sm text-[#ffd7dc]";
+          return;
+        }
+
+        if (!buyerName.value.trim() || !buyerEmail.value.trim() || !buyerPhone.value.trim()) {
+          feedbackMessage.textContent = "Completa nombre, email y celular.";
+          feedbackMessage.className = "mt-4 text-sm text-[#ffd7dc]";
+          return;
+        }
+
+        try {
+          const response = await fetch("http://localhost/festivalburijazz-astro/api/comprar_asiento.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              slug,
+              asientos: selectedSeats.map((seat) => seat.id),
+              nombre: buyerName.value.trim(),
+              email: buyerEmail.value.trim(),
+              telefono: buyerPhone.value.trim(),
+            }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok || !data.ok) {
+            throw new Error(data.message || "No se pudo completar la compra.");
+          }
+
+          feedbackMessage.textContent = "Compra realizada correctamente.";
+          feedbackMessage.className = "mt-4 text-sm text-[#d8fff3]";
+
+          selectedSeats.forEach((seat) => {
+            const btn = document.querySelector(`[data-seat-id="${seat.id}"]`);
+            if (btn) {
+              btn.dataset.seatStatus = "ocupado";
+              btn.disabled = true;
+              btn.classList.remove("seat-available", "seat-selected", "seat-reserved");
+              btn.classList.add("seat-occupied");
+            }
+          });
+
+          resetSelectedSeats();
+          buyerName.value = "";
+          buyerEmail.value = "";
+          buyerPhone.value = "";
+
+          if (reservationTimer) {
+            clearInterval(reservationTimer);
+            reservationTimer = null;
+          }
+
+          reservationTimeText.textContent = "No iniciado";
+        } catch (error) {
+          feedbackMessage.textContent = error instanceof Error ? error.message : "Error al comprar.";
+          feedbackMessage.className = "mt-4 text-sm text-[#ffd7dc]";
+        }
+      });
+
+      renderSelectedSeats();
     </script>
   </body>
 </html>

@@ -1,4 +1,12 @@
 <?php
+session_start();
+
+if (!isset($_SESSION['admin_id'])) {
+    header('Location: /Festivalburijazz-astro/admin/login.php');
+    exit;
+}
+?>
+<?php
 require_once "../config/db.php";
 
 $stmt = $conn->query("SELECT * FROM plantillas_asientos ORDER BY id DESC");

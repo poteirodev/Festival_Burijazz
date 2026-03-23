@@ -1,158 +1,141 @@
 <?php
 require_once "../config/db.php";
 
-header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Origin: http://localhost:4321");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json; charset=utf-8");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
     exit;
 }
 
-/* Liberar reservas vencidas */
-$conn->exec("
-    UPDATE asientos_evento
-    SET estado = 'disponible',
-        reservado_hasta = NULL
-    WHERE estado = 'reservado'
-      AND reservado_hasta IS NOT NULL
-      AND reservado_hasta < NOW()
-");
-
-$input = json_decode(file_get_contents("php://input"), true);
-
-$evento_slug = $input['evento_slug'] ?? null;
-$seat_ids = $input['seat_ids'] ?? [];
-$nombre = trim($input['nombre'] ?? '');
-$email = trim($input['email'] ?? '');
-$celular = trim($input['celular'] ?? '');
-
-if (!$evento_slug || !is_array($seat_ids) || count($seat_ids) < 1 || !$nombre || !$email || !$celular) {
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
     echo json_encode([
-        "success" => false,
-        "message" => "Faltan datos obligatorios."
-    ]);
-    exit;
-}
-
-if (count($seat_ids) > 6) {
-    echo json_encode([
-        "success" => false,
-        "message" => "Solo puedes comprar hasta 6 asientos."
-    ]);
+        'ok' => false,
+        'message' => 'Método no permitido.'
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 try {
+    $raw = file_get_contents("php://input");
+    $data = json_decode($raw, true);
+
+    if (!is_array($data)) {
+        http_response_code(400);
+        echo json_encode([
+            'ok' => false,
+            'message' => 'Datos inválidos.'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $slug = trim($data['slug'] ?? '');
+    $asientos = $data['asientos'] ?? [];
+    $nombre = trim($data['nombre'] ?? '');
+    $email = trim($data['email'] ?? '');
+    $telefono = trim($data['telefono'] ?? '');
+
+    if ($slug === '' || !is_array($asientos) || count($asientos) === 0 || $nombre === '' || $email === '' || $telefono === '') {
+        http_response_code(400);
+        echo json_encode([
+            'ok' => false,
+            'message' => 'Datos inválidos.'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $asientos = array_values(array_unique(array_map('intval', $asientos)));
+    $asientos = array_filter($asientos, fn($id) => $id > 0);
+
+    if (count($asientos) === 0 || count($asientos) > 6) {
+        http_response_code(400);
+        echo json_encode([
+            'ok' => false,
+            'message' => 'Solo puedes comprar entre 1 y 6 asientos.'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     $conn->beginTransaction();
 
-    $stmtEvento = $conn->prepare("SELECT id FROM eventos WHERE slug = ?");
-    $stmtEvento->execute([$evento_slug]);
+    $stmtEvento = $conn->prepare("SELECT id FROM eventos WHERE slug = ? LIMIT 1");
+    $stmtEvento->execute([$slug]);
     $evento = $stmtEvento->fetch(PDO::FETCH_ASSOC);
 
     if (!$evento) {
         $conn->rollBack();
+        http_response_code(404);
         echo json_encode([
-            "success" => false,
-            "message" => "Evento no encontrado."
-        ]);
+            'ok' => false,
+            'message' => 'Evento no encontrado.'
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
     $evento_id = (int)$evento['id'];
 
-    $placeholders = implode(',', array_fill(0, count($seat_ids), '?'));
+    $stmtComprador = $conn->prepare("
+        INSERT INTO compradores (nombre, email, telefono)
+        VALUES (?, ?, ?)
+    ");
+    $stmtComprador->execute([$nombre, $email, $telefono]);
+    $comprador_id = (int)$conn->lastInsertId();
 
-    $params = $seat_ids;
-    array_unshift($params, $evento_id);
+    $placeholders = implode(',', array_fill(0, count($asientos), '?'));
 
-    $stmtSeats = $conn->prepare("
-        SELECT id, estado, reservado_hasta
+    $sqlValidar = "
+        SELECT id
         FROM asientos_evento
         WHERE evento_id = ?
           AND id IN ($placeholders)
-        FOR UPDATE
-    ");
-    $stmtSeats->execute($params);
-    $rows = $stmtSeats->fetchAll(PDO::FETCH_ASSOC);
+          AND (estado = 'disponible' OR estado = 'reservado')
+    ";
 
-    if (count($rows) !== count($seat_ids)) {
+    $stmtValidar = $conn->prepare($sqlValidar);
+    $stmtValidar->execute(array_merge([$evento_id], $asientos));
+    $validos = $stmtValidar->fetchAll(PDO::FETCH_COLUMN);
+
+    if (count($validos) !== count($asientos)) {
         $conn->rollBack();
+        http_response_code(409);
         echo json_encode([
-            "success" => false,
-            "message" => "Uno o más asientos no existen."
-        ]);
+            'ok' => false,
+            'message' => 'Uno o más asientos ya no están disponibles.'
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
-    foreach ($rows as $row) {
-        if ($row['estado'] !== 'reservado') {
-            $conn->rollBack();
-            echo json_encode([
-                "success" => false,
-                "message" => "Primero debes reservar los asientos."
-            ]);
-            exit;
-        }
-
-        if (!$row['reservado_hasta']) {
-            $conn->rollBack();
-            echo json_encode([
-                "success" => false,
-                "message" => "Reserva inválida."
-            ]);
-            exit;
-        }
-
-        if (strtotime($row['reservado_hasta']) < time()) {
-            $conn->rollBack();
-            echo json_encode([
-                "success" => false,
-                "message" => "La reserva expiró."
-            ]);
-            exit;
-        }
-    }
-
-    $stmtComprador = $conn->prepare("
-        INSERT INTO compradores (nombre, email, celular)
-        VALUES (?, ?, ?)
-    ");
-    $stmtComprador->execute([$nombre, $email, $celular]);
-    $comprador_id = $conn->lastInsertId();
-
-    $stmtUpdate = $conn->prepare("
+    $sqlComprar = "
         UPDATE asientos_evento
         SET estado = 'ocupado',
-            reservado_hasta = NULL,
-            comprador_id = ?
-        WHERE id = ?
-    ");
+            comprador_id = ?,
+            reservado_hasta = NULL
+        WHERE evento_id = ?
+          AND id IN ($placeholders)
+          AND (estado = 'disponible' OR estado = 'reservado')
+    ";
 
-    $stmtReserva = $conn->prepare("
-        INSERT INTO reservas (evento_id, asiento_evento_id, comprador_id, estado_pago)
-        VALUES (?, ?, ?, 'pagado')
-    ");
-
-    foreach ($seat_ids as $seat_id) {
-        $stmtUpdate->execute([$comprador_id, $seat_id]);
-        $stmtReserva->execute([$evento_id, $seat_id, $comprador_id]);
-    }
+    $stmtComprar = $conn->prepare($sqlComprar);
+    $stmtComprar->execute(array_merge([$comprador_id, $evento_id], $asientos));
 
     $conn->commit();
 
     echo json_encode([
-        "success" => true,
-        "message" => "Compra realizada correctamente."
-    ]);
-} catch (Exception $e) {
+        'ok' => true,
+        'message' => 'Compra realizada correctamente.'
+    ], JSON_UNESCAPED_UNICODE);
+} catch (Throwable $e) {
     if ($conn->inTransaction()) {
         $conn->rollBack();
     }
 
+    http_response_code(500);
     echo json_encode([
-        "success" => false,
-        "message" => "Error interno al procesar la compra."
-    ]);
+        'ok' => false,
+        'message' => 'Error al comprar: ' . $e->getMessage()
+    ], JSON_UNESCAPED_UNICODE);
 }

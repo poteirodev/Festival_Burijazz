@@ -26,7 +26,7 @@ function slugDisponible($conn, $slugBase) {
         $stmt = $conn->prepare("SELECT COUNT(*) FROM eventos WHERE slug = ?");
         $stmt->execute([$slug]);
 
-        if ($stmt->fetchColumn() == 0) {
+        if ((int)$stmt->fetchColumn() === 0) {
             return $slug;
         }
 
@@ -35,57 +35,72 @@ function slugDisponible($conn, $slugBase) {
     }
 }
 
-$nombre = $_POST['nombre'] ?? '';
+$nombre = trim($_POST['nombre'] ?? '');
 $fecha = $_POST['fecha'] ?? '';
 $hora = $_POST['hora'] ?? '';
-$lugar = $_POST['lugar'] ?? '';
-$descripcion = $_POST['descripcion'] ?? '';
+$lugar = trim($_POST['lugar'] ?? '');
+$descripcion = trim($_POST['descripcion'] ?? '');
 $plantilla_id = $_POST['plantilla_id'] ?? null;
 
-if ($plantilla_id === '') {
+if ($plantilla_id === '' || $plantilla_id === null) {
     $plantilla_id = null;
+} else {
+    $plantilla_id = (int)$plantilla_id;
 }
 
-if (!$nombre || !$fecha || !$hora || !$lugar) {
-    die("Faltan datos obligatorios.");
+if ($nombre === '' || $fecha === '' || $hora === '' || $lugar === '') {
+    exit("Faltan datos obligatorios.");
 }
 
 $slugBase = crearSlug($nombre);
 $slug = slugDisponible($conn, $slugBase);
 
-$sql = "INSERT INTO eventos (nombre, slug, fecha, hora, lugar, descripcion, plantilla_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)";
-$stmt = $conn->prepare($sql);
-$stmt->execute([$nombre, $slug, $fecha, $hora, $lugar, $descripcion, $plantilla_id]);
+try {
+    $conn->beginTransaction();
 
-$evento_id = $conn->lastInsertId();
-
-if ($plantilla_id) {
-    $stmtPlantilla = $conn->prepare("
-        SELECT id, fila, numero, codigo
-        FROM plantilla_asientos_detalle
-        WHERE plantilla_id = ?
-        ORDER BY fila ASC, numero ASC
+    $stmt = $conn->prepare("
+        INSERT INTO eventos (nombre, slug, fecha, hora, lugar, descripcion, plantilla_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
-    $stmtPlantilla->execute([$plantilla_id]);
-    $asientosPlantilla = $stmtPlantilla->fetchAll(PDO::FETCH_ASSOC);
+    $stmt->execute([$nombre, $slug, $fecha, $hora, $lugar, $descripcion, $plantilla_id]);
 
-    $stmtInsertAsiento = $conn->prepare("
-        INSERT INTO asientos_evento
-        (evento_id, plantilla_asiento_id, fila, numero, codigo, estado, precio)
-        VALUES (?, ?, ?, ?, ?, 'disponible', 0.00)
-    ");
+    $evento_id = (int)$conn->lastInsertId();
 
-    foreach ($asientosPlantilla as $asiento) {
-        $stmtInsertAsiento->execute([
-            $evento_id,
-            $asiento['id'],
-            $asiento['fila'],
-            $asiento['numero'],
-            $asiento['codigo']
-        ]);
+    if ($plantilla_id !== null) {
+        $stmtPlantilla = $conn->prepare("
+            SELECT id, fila, numero, codigo
+            FROM plantilla_asientos_detalle
+            WHERE plantilla_id = ?
+            ORDER BY fila ASC, numero ASC
+        ");
+        $stmtPlantilla->execute([$plantilla_id]);
+        $asientosPlantilla = $stmtPlantilla->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmtInsertAsiento = $conn->prepare("
+            INSERT INTO asientos_evento
+            (evento_id, plantilla_asiento_id, fila, numero, codigo, estado, precio)
+            VALUES (?, ?, ?, ?, ?, 'disponible', 0.00)
+        ");
+
+        foreach ($asientosPlantilla as $asiento) {
+            $stmtInsertAsiento->execute([
+                $evento_id,
+                (int)$asiento['id'],
+                $asiento['fila'],
+                (int)$asiento['numero'],
+                $asiento['codigo']
+            ]);
+        }
     }
-}
 
-header("Location: ../admin/eventos.php");
-exit;
+    $conn->commit();
+
+    header("Location: http://localhost:4321/asientos/" . urlencode($slug));
+    exit;
+} catch (Throwable $e) {
+    if ($conn->inTransaction()) {
+        $conn->rollBack();
+    }
+
+    exit("Error al crear el evento: " . $e->getMessage());
+}
